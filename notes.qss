@@ -1,0 +1,69 @@
+/* Styling for search bar */
+
+#search > QLineEdit {
+    border: 0;
+    background: transparent;
+    border-bottom: 2px solid #6C6C6C;
+}
+
+#search > QLineEdit:focus {
+    border-bottom: 2px solid #5fa7dd;
+}
+
+#search > QLineEdit:hover:!focus {
+    border-bottom: 2px solid #C8C8C8;
+}
+
+
+
+/* Note Styling */
+
+NoteWidget {
+    background: #373737;
+    border-radius: 10px;
+}
+
+NoteWidget > [tag="title"] {
+    font-size: 15px;
+    border: 0;
+    background: transparent;
+    border-bottom: 2px solid transparent;
+    font-weight: bold;
+}
+
+NoteWidget > [tag="title"]:focus {
+    font-size: 15px;
+    border: 0;
+    background: transparent;
+    border-bottom: 2px solid #5fa7dd;
+}
+
+NoteWidget > [tag="text"] {
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+}
+
+NoteWidget > [tag="text"]:focus {
+    border-bottom: 2px solid #5fa7dd;
+}
+
+NoteWidget > [tag="info"] {
+
+}
+
+
+/* Utility */
+
+[btn-solid] {
+    background: #5fa7dd;
+    border-radius: 10px;
+}
+
+[btn-solid]:hover {
+    background: #7ab6e3;
+}
+
+[btn-solid]:pressed {
+    background: #396e96;
+}
