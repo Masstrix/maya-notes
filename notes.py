@@ -20,9 +20,12 @@
     Author: Matthew Denton
 """
 
+__version__ = (0, 1, 0)
+__author__ = 'Matthew Denton'
+
 from dataclasses import dataclass
 from PySide2 import QtCore, QtGui
-from PySide2.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog, QCheckBox, QLineEdit, QLabel, QPushButton, QPlainTextEdit, QSpacerItem, QSizePolicy, QToolButton, QStyleOption
+from PySide2.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog, QCheckBox, QLineEdit, QLabel, QPushButton, QPlainTextEdit, QSpacerItem, QSizePolicy, QToolButton, QStyleOption, QScrollArea
 from shiboken2 import wrapInstance
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from maya import cmds
@@ -52,7 +55,7 @@ def load_notes():
 
 def _maya_main_window():
     """Return mayas main window"""
-    return wrapInstance(OpenMayaUI.MQtUtil.mainWindow(), QWidget)
+    return wrapInstance(int(OpenMayaUI.MQtUtil.mainWindow()), QWidget)
 
 
 def _maya_delete_ui(window_title, window_object):
@@ -147,11 +150,35 @@ class Note:
     created_date: str = ''
     author: str = ''
     chesklist: list = None
+    linked_objects: list = None
 
     def add_check(self, check: NoteCheck):
         if self.chesklist is None:
             self.chesklist = []
         self.chesklist.append(check)
+
+    def is_linked(self):
+        return self.linked_objects is not None and len(self.linked_objects) > 0
+
+
+class WrappedTextWidget(QPlainTextEdit):
+    '''
+    Wrapper for QPlainTextEdit to create a version of the widget that verticly fits to
+    the contained document text.
+    '''
+
+    def __init__(self, *args, **kwargs):
+        super(WrappedTextWidget, self).__init__(*args, **kwargs)
+        self.setWordWrapMode(QtGui.QTextOption.WrapAtWordBoundaryOrAnywhere)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        document = self.document()
+        font = self.fontMetrics()
+        margins = self.contentsMargins()
+        height = (document.lineCount() + 1) * font.lineSpacing()
+        self.setFixedHeight(height + margins.top() + margins.bottom())
 
 
 class NoteCheckWidget(QWidget):
@@ -163,10 +190,12 @@ class NoteCheckWidget(QWidget):
         # Set the widgets layout
         self._layout = QHBoxLayout()
         self.setLayout(self._layout)
+        self._layout.setSpacing(0)
+        self.setContentsMargins(0, 0, 0, 0)
 
         # Create needed widgets
-        self.checkbox = QCheckBox()
-        self.text = QLineEdit()
+        self.checkbox = QCheckBox(checked=noteCheck.checked)
+        self.text = WrappedTextWidget(noteCheck.text)
 
         self._construct()
 
@@ -175,15 +204,41 @@ class NoteCheckWidget(QWidget):
         self._layout.addWidget(self.text)
 
 
-class NoteCheckListWidget(QWidget):
+class NoteChecklistWidget(QWidget):
+    '''
 
-    def __init__(self):
-        super(NoteCheckListWidget, self).__init__()
+    TODO handle the updating of the notes list within here.
+        - Connect typing to check text input. If this is the last check append a
+        new empty disabled check to add a new item to, this should not be saved as a
+        new item until text is added to it. Otherwise if it's not the
+        last element just update the notes data.
+
+    TODO handle when the text of a note is empty, and focus is lost from the check,
+        remove it from the checklist.
+    '''
+
+    def __init__(self, note: Note):
+        '''
+        note    :Note:  an instance of the note object this checklist is for.
+        '''
+        super(NoteChecklistWidget, self).__init__()
+
+        # Keep the note handy so it can easily be updated and saved when
+        # any of the checks are edited.
+        self.note = note
 
         self._layout = QVBoxLayout()
         self.setLayout(self._layout)
+        self._layout.setSpacing(0)
 
         self.items = []
+
+        self._load_items()
+
+    def _load_items(self):
+        # Loads all the checklist items from the note object in as a widget.
+        for check in self.note.chesklist:
+            self.append(NoteCheckWidget(check))
 
     def append(self, check: NoteCheckWidget):
         self.items.append(check)
@@ -208,11 +263,12 @@ class NoteWidget(QWidget):
         # Make the background styled
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.setContentsMargins(20, 15, 20, 10)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
         # Create needed widgets
-        self.title = QLineEdit(note.title)
-        self.text = QLineEdit(note.text)
-        self.checklist = NoteCheckListWidget()
+        self.title = WrappedTextWidget(note.title)
+        self.text = WrappedTextWidget(note.text)
+        self.checklist = NoteChecklistWidget(note)
 
         self._del_btn = QPushButton()
 
@@ -232,7 +288,8 @@ class NoteWidget(QWidget):
         # TODO make wrapper of button to enable opacity animation when hover, pressed etc
         archive_btn = QToolButton(icon=icon('archive.svg'))
         delete_btn = QToolButton(icon=icon('delete.svg'))
-        linked_icon = QToolButton(icon=icon('linked-object.svg'))
+        linked_icon = QToolButton(
+            icon=icon('linked-object.svg'), visible=self.note.is_linked())
 
         tools.addStretch()
         tools.addWidget(self._actions_widget)
@@ -249,7 +306,8 @@ class NoteWidget(QWidget):
         self._layout.addWidget(self.checklist)
 
         # Extra info widgets at the bottom
-        self.info = QLabel(f'{self.note.created_date}         {self.note.author}')
+        self.info = QLabel(
+            f'{self.note.created_date}         {self.note.author}')
         self._layout.addWidget(self.info)
 
         # Set the data tags for styling
@@ -311,7 +369,7 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
 
     def _construct_ui(self):
 
-        # Search bar
+        # Create and add the search bar widgets
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit(minimumWidth=250)
         # self.search_input.setMinimumWidth()
@@ -323,9 +381,13 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
         search_layout.addStretch()
         self._layout.addWidget(self.search_widget)
 
+        # Add the notes widget as in a scroll area.
         self._notes_layout = QVBoxLayout()
-        self._layout.addLayout(self._notes_layout)
-        self._layout.addStretch()
+        self._notes_widget = QWidget(layout=self._notes_layout)
+        self._notes_widget.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self._layout.addWidget(QScrollArea(
+            widgetResizable=True, widget=self._notes_widget))
 
         # Create the floating button to create new notes.
         # TODO add the add icon into it with correct alignment. Might need to make a subclass of
@@ -339,6 +401,8 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
                                       )
         self.create_btn.setFixedSize(120, 40)
         self.create_btn.setProperty('btn-solid', '')
+
+        self._notes_widget.stackUnder(self.create_btn)
 
     def resizeEvent(self, event):
         # Reposition the create notes button to be fixed to the windows bottom right.
@@ -356,18 +420,24 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
             note.setParent(None)
             note.deleteLater()
 
-        print(notes)
-
         for note in notes:
             self._add_note(NoteWidget(note))
 
 
-test_note = Note('This is a title', 'Some text...', '32m ago', 'Matthew')
-
+test_note = Note('This is a title', 'Some text...', '32m ago',
+                 'Matthew', linked_objects='Testing')
 test_note.add_check(NoteCheck('some test checkbox'))
-test_note.add_check(NoteCheck('another checkbox'))
-
+test_note.add_check(NoteCheck('another checkbox', True))
 notes.append(test_note)
+
+
+test_note_b = Note('testing everything on a note that can be tested.', 'This is a longer description that should take up multiple lines when the window is not to wide.', '32m ago')
+test_note_b.add_check(NoteCheck('Singleton checkbox', True))
+test_note_b.add_check(NoteCheck('')) # Empty checkbox'x should be ignred
+test_note_b.add_check(NoteCheck('There was an empty checkbox above that was ignored.'))
+test_note_b.add_check(NoteCheck('I have more...', children=[NoteCheck('Like meeeeee', True), NoteCheck('And me!')]))
+test_note_b.add_check(NoteCheck('This is a longer task that should easily take up multiple lines to allow for checking of text wrapping.'))
+notes.append(test_note_b)
 
 
 def run_main(**kwargs):

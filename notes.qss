@@ -52,6 +52,28 @@ NoteWidget > [tag="info"] {
 
 }
 
+WrappedTextWidget {
+    border: 0;
+    background: transparent;
+    border-bottom: 2px solid transparent;
+}
+WrappedTextWidget:focus {
+    border-bottom: 2px solid #5fa7dd;
+}
+
+
+/* Checkbox */
+
+QCheckBox {
+
+}
+QCheckBox:indicator:unchecked {
+    background: red;
+}
+QCheckBox:indicator:checked {
+    background: green;
+}
+
 
 /* Utility */
 
