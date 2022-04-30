@@ -180,13 +180,19 @@ class NoteCheckListWidget(QWidget):
     def __init__(self):
         super(NoteCheckListWidget, self).__init__()
 
+        self._layout = QVBoxLayout()
+        self.setLayout(self._layout)
+
         self.items = []
 
     def append(self, check: NoteCheckWidget):
         self.items.append(check)
+        self._layout.addWidget(check)
 
     def pop(self, index: int):
-        self.items.pop(index)
+        widget = self.items.pop(index)
+        self._layout.removeWidget(widget)
+        widget.deleteLater()
 
 
 class NoteWidget(QWidget):
@@ -206,6 +212,7 @@ class NoteWidget(QWidget):
         # Create needed widgets
         self.title = QLineEdit(note.title)
         self.text = QLineEdit(note.text)
+        self.checklist = NoteCheckListWidget()
 
         self._del_btn = QPushButton()
 
@@ -216,7 +223,7 @@ class NoteWidget(QWidget):
         tools = QHBoxLayout()
         actions = QHBoxLayout()
         self._tools_widget = QWidget(parent=self, fixedHeight=35)
-        self._actions_widget = QWidget(visible=True)
+        self._actions_widget = QWidget(visible=False)
         self._actions_widget.setLayout(actions)
 
         tools.setContentsMargins(0, 0, 0, 0)
@@ -239,6 +246,7 @@ class NoteWidget(QWidget):
         # Data widgets in the center
         self._layout.addWidget(self.title)
         self._layout.addWidget(self.text)
+        self._layout.addWidget(self.checklist)
 
         # Extra info widgets at the bottom
         self.info = QLabel(f'{self.note.created_date}         {self.note.author}')
