@@ -23,13 +23,15 @@
 __version__ = (0, 1, 0)
 __author__ = 'Matthew Denton'
 
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from PySide2 import QtCore, QtGui
 from PySide2.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog, QCheckBox, QLineEdit, QLabel, QPushButton, QPlainTextEdit, QSpacerItem, QSizePolicy, QToolButton, QStyleOption, QScrollArea
 from shiboken2 import wrapInstance
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from maya import cmds
 from maya import OpenMayaUI
+from datetime import datetime, timedelta
+from math import floor
 import os
 
 
@@ -120,6 +122,24 @@ def icon(fileName: str) -> QtGui.QIcon:
     return QtGui.QIcon(os.path.join(ICON_DIR, fileName))
 
 
+def format_time(date: timedelta):
+    '''
+    Returns a timedelta in either just it's seconds, miniutes, hours or
+    days time, only ever returing the largets time unit.
+    '''
+    seconds = date.seconds
+    miniutes = floor(seconds / 60)
+    hours = floor(miniutes / 60)
+    days = date.days
+    if days >= 1:
+        return f'{days}d'
+    if hours >= 1:
+        return f'{hours}h'
+    if miniutes >= 1:
+        return f'{miniutes}m'
+    return f'{seconds}s'
+
+
 @dataclass
 class NoteCheck:
     '''
@@ -130,7 +150,7 @@ class NoteCheck:
     a main checked. The checked state of this would then only ever be true if all of the
     children are checked.
     '''
-    text: str
+    text: str = ''
     checked: bool = False
     children: list = None
 
@@ -145,20 +165,29 @@ class Note:
     """
     Stores information for a note.
     """
-    title: str
-    text: str
-    created_date: str = ''
+    title: str = ''
+    text: str = ''
+    created_date: datetime = None
     author: str = ''
-    chesklist: list = None
+    checklist: list = None
     linked_objects: list = None
+    pinned: bool = False
+    date: InitVar[datetime] = None
+
+    def __post_init__(self, date):
+        if date is None:
+            self.created_date = datetime.utcnow()
 
     def add_check(self, check: NoteCheck):
-        if self.chesklist is None:
-            self.chesklist = []
-        self.chesklist.append(check)
+        if self.checklist is None:
+            self.checklist = []
+        self.checklist.append(check)
 
     def is_linked(self):
         return self.linked_objects is not None and len(self.linked_objects) > 0
+
+    def has_checklist(self):
+        return self.checklist is not None and len(self.checklist) > 0
 
 
 class WrappedTextWidget(QPlainTextEdit):
@@ -166,11 +195,18 @@ class WrappedTextWidget(QPlainTextEdit):
     Wrapper for QPlainTextEdit to create a version of the widget that verticly fits to
     the contained document text.
     '''
+    focusOut = QtCore.Signal()
+    focusIn = QtCore.Signal()
+    tabPressed = QtCore.Signal()
 
     def __init__(self, *args, **kwargs):
         super(WrappedTextWidget, self).__init__(*args, **kwargs)
         self.setWordWrapMode(QtGui.QTextOption.WrapAtWordBoundaryOrAnywhere)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.preventTab = False
+
+    def setPreventTab(self, override: bool):
+        self.preventTab = override
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -180,8 +216,88 @@ class WrappedTextWidget(QPlainTextEdit):
         height = (document.lineCount() + 1) * font.lineSpacing()
         self.setFixedHeight(height + margins.top() + margins.bottom())
 
+    def focusOutEvent(self, event):
+        if self.preventTab and event.reason() == QtCore.Qt.TabFocusReason:
+            return
+        super().focusOutEvent(event)
+        self.focusOut.emit()
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.focusIn.emit()
+
+    def keyPressEvent(self, event):
+        if self.preventTab and event.key() == QtCore.Qt.Key_Tab:
+            self.tabPressed.emit()
+        else:
+            super().keyPressEvent(event)
+
+
+class IconButton(QToolButton):
+
+    def __init__(self, icon, hoverIcon: str = None, activeIcon: str = None, tip: str = None, **kwargs):
+        super(IconButton, self).__init__(**kwargs)
+
+        if tip is not None:
+            self.setToolTip(tip)
+            self.setStatusTip(tip)
+
+        self._icon = icon
+        self._hover_icon = hoverIcon
+        self._active_icon = activeIcon
+        self.setIcon(icon)
+
+    def enterEvent(self, event):
+        if self._hover_icon:
+            self.setIcon(self._hover_icon)
+
+    def leaveEvent(self, event):
+        self.setIcon(self._icon)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if self._active_icon:
+            self.setIcon(self._active_icon)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if self._hover_icon:
+            self.setIcon(self._hover_icon)
+        else:
+            self.setIcon(self._icon)
+
+
+class TimerLabelWidget(QLabel):
+    '''
+    A simple Qt label that is rendered to display the time difference.
+    '''
+
+    def __init__(self, date: datetime, prefix: str = '', suffix: str = '', **kwargs):
+        super(TimerLabelWidget, self).__init__(**kwargs)
+        self.date = date
+        self.prefix = prefix
+        self.suffix = suffix
+
+        timer = QtCore.QTimer(self)
+        timer.timeout.connect(self._update_display)
+        timer.start(1000)
+
+        self._update_display()
+
+    def setPrefix(self, prefix):
+        self.prefix = prefix
+
+    def setSuffix(self, suffix):
+        self.suffix = suffix
+
+    def _update_display(self):
+        now = datetime.utcnow()
+        self.setText(
+            f'{self.prefix}{format_time(now - self.date)}{self.suffix}')
+
 
 class NoteCheckWidget(QWidget):
+    # tabbed = QtCore.Signal(object)
 
     def __init__(self, noteCheck: NoteCheck):
         super(NoteCheckWidget, self).__init__()
@@ -196,12 +312,28 @@ class NoteCheckWidget(QWidget):
         # Create needed widgets
         self.checkbox = QCheckBox(checked=noteCheck.checked)
         self.text = WrappedTextWidget(noteCheck.text)
+        self.text.setPlaceholderText('Add another item..')
+
+        self.text.textChanged.connect(self._update_text)
+        self.text.setPreventTab(True)
 
         self._construct()
 
     def _construct(self):
         self._layout.addWidget(self.checkbox)
         self._layout.addWidget(self.text)
+
+    def _update_text(self):
+        self.note_check.text = self.text.toPlainText()
+
+    def _update_checked_status(self):
+        self.note_check.checked = self.checkbox.isChecked()
+
+    def get_text(self) -> str:
+        return self.note_check.text
+
+    def is_checked(self) -> bool:
+        return self.note_check.checked
 
 
 class NoteChecklistWidget(QWidget):
@@ -216,6 +348,7 @@ class NoteChecklistWidget(QWidget):
     TODO handle when the text of a note is empty, and focus is lost from the check,
         remove it from the checklist.
     '''
+    emptied = QtCore.Signal()
 
     def __init__(self, note: Note):
         '''
@@ -235,19 +368,62 @@ class NoteChecklistWidget(QWidget):
 
         self._load_items()
 
+    def is_empty(self):
+        # Return if the checklist is empty
+        return len(self.items) == 0
+
+    def _empty_item(self):
+        # Return a new empty note check.
+        return NoteCheckWidget(NoteCheck())
+
     def _load_items(self):
         # Loads all the checklist items from the note object in as a widget.
-        for check in self.note.chesklist:
-            self.append(NoteCheckWidget(check))
+        if self.note.checklist is not None:
+            for check in self.note.checklist:
+                self.append(NoteCheckWidget(check))
+        self.append(self._empty_item())
 
     def append(self, check: NoteCheckWidget):
+        '''Append a new note check to the checklist'''
         self.items.append(check)
         self._layout.addWidget(check)
+
+        # Connect signals
+        check.text.focusOut.connect(lambda: self._lose_focus(check))
+        check.text.textChanged.connect(lambda: self._update_text(check))
+        check.text.tabPressed.connect(lambda: print('tab was pressed'))
+
+    def _tabbed(self, widget):
+        print ('Was tabbed')
 
     def pop(self, index: int):
         widget = self.items.pop(index)
         self._layout.removeWidget(widget)
         widget.deleteLater()
+
+    def remove(self, check: NoteCheckWidget):
+        self.items.remove(check)
+        self._layout.removeWidget(check)
+        check.deleteLater()
+
+    def _update_text(self, check: NoteCheckWidget):
+        index = self.items.index(check)
+        size = len(self.items) - 1
+        if index == size:
+            if len(check.get_text()) > 0:
+                self.append(self._empty_item())
+
+        elif index < size and len(self.items[index + 1].get_text()) == 0 and len(check.get_text()) == 0:
+            self.pop(-1)
+
+    def _lose_focus(self, check: NoteCheckWidget):
+        text = check.text.toPlainText()
+        index = self.items.index(check)
+        if len(text) == 0 and not (index == len(self.items) - 1 and len(self.items) > 1):
+            self.remove(check)
+        if self.is_empty():
+            self.emptied.emit()
+            self.append(self._empty_item())
 
 
 class NoteWidget(QWidget):
@@ -266,13 +442,14 @@ class NoteWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
         # Create needed widgets
-        self.title = WrappedTextWidget(note.title)
-        self.text = WrappedTextWidget(note.text)
+        self.title = WrappedTextWidget(
+            note.title, placeholderText='Untiled Note')
+        self.text = WrappedTextWidget(
+            note.text, placeholderText='Write something here...')
         self.checklist = NoteChecklistWidget(note)
 
-        self._del_btn = QPushButton()
-
         self._construct()
+        self._connect_signals()
 
     def _construct(self):
         # Action/Toolbar widgets
@@ -286,16 +463,24 @@ class NoteWidget(QWidget):
         actions.setContentsMargins(0, 0, 0, 0)
 
         # TODO make wrapper of button to enable opacity animation when hover, pressed etc
-        archive_btn = QToolButton(icon=icon('archive.svg'))
-        delete_btn = QToolButton(icon=icon('delete.svg'))
-        linked_icon = QToolButton(
+        self._archive_btn = IconButton(icon('archive.svg'), icon(
+            'archive-hover.svg'), icon('archive-active.svg'), tip='Archive this note')
+        self._pin_btn = IconButton(icon('pin.svg'), icon(
+            'pin-hover.svg'), icon('pin-active.svg'), tip='Delete this note')
+        self._delete_btn = IconButton(icon('delete.svg'), icon(
+            'delete-hover.svg'), icon('delete-active.svg'), tip='Pin this note to the top')
+        self._listadd_btn = IconButton(icon('listadd.svg'), icon(
+            'listadd-hover.svg'), icon('listadd-active.svg'), tip='Create a checklist')
+        self._linked_icon = QToolButton(
             icon=icon('linked-object.svg'), visible=self.note.is_linked())
 
         tools.addStretch()
         tools.addWidget(self._actions_widget)
-        actions.addWidget(archive_btn)
-        actions.addWidget(delete_btn)
-        tools.addWidget(linked_icon)
+        # actions.addWidget(archive_btn)
+        actions.addWidget(self._delete_btn)
+        actions.addWidget(self._listadd_btn)
+        actions.addWidget(self._pin_btn)
+        tools.addWidget(self._linked_icon)
 
         self._tools_widget.setProperty('toolbar', '')
         self._tools_widget.setLayout(tools)
@@ -305,15 +490,45 @@ class NoteWidget(QWidget):
         self._layout.addWidget(self.text)
         self._layout.addWidget(self.checklist)
 
+        self.checklist.setVisible(self.note.has_checklist())
+        self._listadd_btn.setVisible(not self.note.has_checklist())
+
         # Extra info widgets at the bottom
-        self.info = QLabel(
-            f'{self.note.created_date}         {self.note.author}')
+        self.info = TimerLabelWidget(
+            self.note.created_date, suffix=f' ago    {self.note.author}')
         self._layout.addWidget(self.info)
 
         # Set the data tags for styling
         self.title.setProperty('tag', 'title')
         self.text.setProperty('tag', 'text')
         self.info.setProperty('tag', 'info')
+
+    def _connect_signals(self):
+        self._delete_btn.clicked.connect(self.delete)
+        self._listadd_btn.clicked.connect(self.add_checklist)
+        self._pin_btn.clicked.connect(self.pin)
+
+        # Checklist connections
+        self.checklist.emptied.connect(self.remove_checklist)
+
+    def pin(self):
+        self.note.pinned = True
+
+    def unpin(self):
+        self.note.pinned = False
+
+    def delete(self):
+        notes.remove(self.note)
+        self.setParent(None)
+        self.deleteLater()
+
+    def add_checklist(self):
+        self.checklist.setVisible(True)
+        self._listadd_btn.setVisible(False)
+
+    def remove_checklist(self):
+        self.checklist.setVisible(False)
+        self._listadd_btn.setVisible(True)
 
     def resizeEvent(self, event):
         # Reposition the create notes button to be fixed to the windows bottom right.
@@ -327,16 +542,6 @@ class NoteWidget(QWidget):
 
     def leaveEvent(self, event):
         self._actions_widget.setVisible(False)
-
-    def refresh(self):
-        ''' Refresh the notes data and widgets '''
-        pass
-
-    def _update_title(self):
-        pass
-
-    def _update_text(self):
-        pass
 
 
 class NotesUI(MayaQWidgetDockableMixin, QDialog):
@@ -365,7 +570,6 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
 
         self._construct_ui()
         self.refresh_ui()
-        self.show(dockable=True)
 
     def _construct_ui(self):
 
@@ -404,12 +608,20 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
 
         self._notes_widget.stackUnder(self.create_btn)
 
+        self.create_btn.clicked.connect(self.create_new_note)
+
     def resizeEvent(self, event):
         # Reposition the create notes button to be fixed to the windows bottom right.
         self.create_btn.move(
             self.width() - self.create_btn.width() - 20,
             self.height() - self.create_btn.height() - 20
         )
+
+    def create_new_note(self):
+        note = Note()
+        widget = NoteWidget(note)
+        notes.append(note)
+        self._add_note(widget)
 
     def _add_note(self, widget: NoteWidget):
         self._note_widgets.append(widget)
@@ -424,27 +636,36 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
             self._add_note(NoteWidget(note))
 
 
-test_note = Note('This is a title', 'Some text...', '32m ago',
-                 'Matthew', linked_objects='Testing')
-test_note.add_check(NoteCheck('some test checkbox'))
-test_note.add_check(NoteCheck('another checkbox', True))
-notes.append(test_note)
+# test_note = Note('This is a title', 'Some text...',
+#                  author='Matthew', linked_objects='Testing')
+# test_note.add_check(NoteCheck('some test checkbox'))
+# test_note.add_check(NoteCheck('another checkbox', True))
+# notes.append(test_note)
 
 
-test_note_b = Note('testing everything on a note that can be tested.', 'This is a longer description that should take up multiple lines when the window is not to wide.', '32m ago')
-test_note_b.add_check(NoteCheck('Singleton checkbox', True))
-test_note_b.add_check(NoteCheck('')) # Empty checkbox'x should be ignred
-test_note_b.add_check(NoteCheck('There was an empty checkbox above that was ignored.'))
-test_note_b.add_check(NoteCheck('I have more...', children=[NoteCheck('Like meeeeee', True), NoteCheck('And me!')]))
-test_note_b.add_check(NoteCheck('This is a longer task that should easily take up multiple lines to allow for checking of text wrapping.'))
-notes.append(test_note_b)
+# test_note_c = Note('Simple test', 'Smol')
+# notes.append(test_note_c)
+# test_note_d = Note('Simple test')
+# notes.append(test_note_d)
 
+# test_note_b = Note('testing everything on a note that can be tested.',
+#                    'This is a longer description that should take up multiple lines when the window is not to wide.')
+# test_note_b.add_check(NoteCheck('Singleton checkbox', True))
+# test_note_b.add_check(NoteCheck(''))  # Empty checkbox'x should be ignred
+# test_note_b.add_check(
+#     NoteCheck('There was an empty checkbox above that was ignored.'))
+# test_note_b.add_check(NoteCheck('I have more...', children=[
+#                       NoteCheck('Like meeeeee', True), NoteCheck('And me!')]))
+# test_note_b.add_check(NoteCheck(
+#     'This is a longer task that should easily take up multiple lines to allow for checking of text wrapping.'))
+# notes.append(test_note_b)
 
 def run_main(**kwargs):
     _maya_delete_ui(WTITLE, WOBJ)
     _maya_delete_workspace(WOBJ)
 
-    NotesUI()
+    noteui = NotesUI()
+    noteui.show(dockable=True)
 
     if "dockable" in kwargs and kwargs["dockable"]:
         _maya_update_workspace(WOBJ)
