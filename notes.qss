@@ -18,6 +18,9 @@ QScrollArea {
     border: 0;
 }
 
+QToolButton {
+    border: 0;
+}
 
 
 /* Note Styling */

@@ -1,23 +1,21 @@
 """
+#################################################################
 
-    Maya Notes
+Maya Notes
 
-    TODO - Have notes based on scene, project, or object.
-    TODO - Make a wrapper of QWidget that enables animation.
+TODO - Have notes based on scene, project, or object.
+TODO - Make a wrapper of QWidget that enables animation.
+TODO - Allow tab indenting of checklists to create a "checklist group" so
+TODO   you can have a sub tasks kind of setup.
+TODO - Fix flickering of notes when searching.
 
-    Object notes:
-    If a note is linked to an object then if that object or any children of
-    that object are selected, the note will be visible.
+This is a small script that impliments note taking into maya with a
+simple to use interface. Notes can have checklists.
 
-    Scene Notes:
-    Scene notes are linked to specific scenes and cn only be edited when that
-    scene is open.
+Requires Maya 2022 or newer for python 3
+Author: Matthew Denton
 
-    Project Notes:
-    Project notes are always visible.
-
-    Requires Maya 2022 or newer for python 3
-    Author: Matthew Denton
+#################################################################
 """
 
 __version__ = (0, 1, 0)
@@ -734,7 +732,9 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
         self._add_note(widget)
 
     def refresh_ui(self):
-        self._flush_ui()
+        for note in self._note_widgets:
+            note.setParent(None)
+            note.deleteLater()
         for note in notes:
             self._add_note(NoteWidget(note))
 
@@ -748,17 +748,11 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
             note = note_widget.note
             in_text = search in note.text.lower()
             in_title = search in note.title.lower()
-            note_widget.setVisible(in_title or in_text or search == '')
-
+            note_widget.setVisible(in_text or in_title)
 
     def _add_note(self, widget: NoteWidget):
         self._note_widgets.append(widget)
         self._notes_layout.addWidget(widget)
-
-    def _flush_ui(self):
-        for note in self._note_widgets:
-            note.setParent(None)
-            note.deleteLater()
 
 
 def run_main(**kwargs):
