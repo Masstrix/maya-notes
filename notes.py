@@ -23,9 +23,9 @@
 __version__ = (0, 1, 0)
 __author__ = 'Matthew Denton'
 
-from dataclasses import InitVar, dataclass
+from dataclasses import dataclass
 from PySide2 import QtCore, QtGui
-from PySide2.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog, QCheckBox, QLineEdit, QLabel, QPushButton, QPlainTextEdit, QSpacerItem, QSizePolicy, QToolButton, QStyleOption, QScrollArea
+from PySide2.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog, QCheckBox, QLineEdit, QLabel, QPlainTextEdit, QSpacerItem, QSizePolicy, QToolButton, QScrollArea
 from shiboken2 import wrapInstance
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from maya import cmds
@@ -77,12 +77,19 @@ def load_notes():
         # Create a new Note pbject for every cached note.
         for noteData in data:
             noteMeta = json.loads(noteData)
+
+            checklist = []
+            for checkJson in noteMeta['checklist']:
+                check = json.loads(checkJson)
+                checklist.append(NoteCheck(check['text'], check['checked']))
+
             Note(
                 title=noteMeta['title'],
                 text=noteMeta['text'],
-                created_date=datetime.strptime(noteMeta['created_date'], '%Y-%m-%d %H:%M:%S.%f'), # 2022-05-01 04:56:54.090282
+                created_date=datetime.strptime(noteMeta['created_date'], '%Y-%m-%d %H:%M:%S.%f'), # 2022-01-20 23:00:00.00
                 author=noteMeta['author'],
-                pinned=noteMeta['pinned']
+                pinned=noteMeta['pinned'],
+                checklist=checklist
             )
     except Exception:
         pass
@@ -197,7 +204,7 @@ class NoteCheck:
             'checked': self.checked,
             'text': self.text
         }
-        if self.children is not None or len(self.children) > 0:
+        if self.children is not None and len(self.children) > 0:
             children = []
             for child in self.children:
                 children.append(child.serialize())
@@ -222,6 +229,8 @@ class Note:
     def __post_init__(self):
         if self.created_date is None:
             self.created_date = datetime.utcnow()
+        if self.checklist is None:
+            self.checklist = []
 
         # Save this newly created note to the scene.
         notes.append(self)
@@ -235,7 +244,11 @@ class Note:
         return self.linked_objects is not None and len(self.linked_objects) > 0
 
     def has_checklist(self):
-        return self.checklist is not None and len(self.checklist) > 0
+        
+        count = len(self.checklist)
+        if self.checklist is None or count == 0:
+            return False
+        return count > 1 or self.checklist[0].text != ''
 
     def serialize(self) -> str:
         json_data = {
@@ -250,7 +263,8 @@ class Note:
         if self.checklist is not None:
             checks = []
             for check in self.checklist:
-                checks.append(check.serialize())
+                if check.text is not None and check.text != '':
+                    checks.append(check.serialize())
             json_data['checklist'] = checks
         return json.dumps(json_data)
 
@@ -364,9 +378,10 @@ class TimerLabelWidget(QLabel):
 class NoteCheckWidget(QWidget):
     # tabbed = QtCore.Signal(object)
 
-    def __init__(self, noteCheck: NoteCheck):
+    def __init__(self, noteCheck: NoteCheck, note: Note):
         super(NoteCheckWidget, self).__init__()
         self.note_check = noteCheck
+        self.note = note
 
         # Set the widgets layout
         self._layout = QHBoxLayout()
@@ -391,9 +406,11 @@ class NoteCheckWidget(QWidget):
 
     def _update_text(self):
         self.note_check.text = self.text.toPlainText()
+        save_notes()
 
     def _update_checked_status(self):
         self.note_check.checked = self.checkbox.isChecked()
+        save_notes()
 
     def get_text(self) -> str:
         return self.note_check.text
@@ -440,13 +457,16 @@ class NoteChecklistWidget(QWidget):
 
     def _empty_item(self):
         # Return a new empty note check.
-        return NoteCheckWidget(NoteCheck())
+        check = NoteCheck()
+        self.note.add_check(check)
+        return NoteCheckWidget(check, self.note)
 
     def _load_items(self):
         # Loads all the checklist items from the note object in as a widget.
         if self.note.checklist is not None:
             for check in self.note.checklist:
-                self.append(NoteCheckWidget(check))
+                self.append(NoteCheckWidget(check, self.note))
+        # if not self.items[-1].note_check.text == '':
         self.append(self._empty_item())
 
     def append(self, check: NoteCheckWidget):
@@ -457,19 +477,17 @@ class NoteChecklistWidget(QWidget):
         # Connect signals
         check.text.focusOut.connect(lambda: self._lose_focus(check))
         check.text.textChanged.connect(lambda: self._update_text(check))
-        check.text.tabPressed.connect(lambda: print('tab was pressed'))
-
-    def _tabbed(self, widget):
-        print('Was tabbed')
 
     def pop(self, index: int):
         widget = self.items.pop(index)
         self._layout.removeWidget(widget)
+        self.note.checklist.remove(widget.note_check)
         widget.deleteLater()
 
     def remove(self, check: NoteCheckWidget):
         self.items.remove(check)
         self._layout.removeWidget(check)
+        self.note.checklist.remove(check.note_check)
         check.deleteLater()
 
     def _update_text(self, check: NoteCheckWidget):
@@ -658,9 +676,11 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
         self.setLayout(self._layout)
 
         self._construct_ui()
+        self._connect_signals()
         self.refresh_ui()
 
     def _construct_ui(self):
+        '''Construct all the elements needed to display the content.'''
 
         # Create and add the search bar widgets
         search_layout = QHBoxLayout()
@@ -695,7 +715,11 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
 
         self._notes_widget.stackUnder(self.create_btn)
 
+    def _connect_signals(self):
+        '''Connects all signals for the base ui'''
         self.create_btn.clicked.connect(self.create_new_note)
+        self.search_input.textChanged.connect(self._update_search)
+
 
     def resizeEvent(self, event):
         # Reposition the create notes button to be fixed to the windows bottom right.
@@ -709,6 +733,24 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
         widget = NoteWidget(note)
         self._add_note(widget)
 
+    def refresh_ui(self):
+        self._flush_ui()
+        for note in notes:
+            self._add_note(NoteWidget(note))
+
+    def _update_search(self):
+        '''
+        Update the current search input. This will hide any notes that
+        don't match the current search.
+        '''
+        search = self.search_input.text().lower()
+        for note_widget in self._note_widgets:
+            note = note_widget.note
+            in_text = search in note.text.lower()
+            in_title = search in note.title.lower()
+            note_widget.setVisible(in_title or in_text or search == '')
+
+
     def _add_note(self, widget: NoteWidget):
         self._note_widgets.append(widget)
         self._notes_layout.addWidget(widget)
@@ -717,12 +759,6 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
         for note in self._note_widgets:
             note.setParent(None)
             note.deleteLater()
-
-    def refresh_ui(self):
-        self._flush_ui()
-
-        for note in notes:
-            self._add_note(NoteWidget(note))
 
 
 def run_main(**kwargs):
