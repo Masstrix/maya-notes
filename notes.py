@@ -33,10 +33,13 @@ from maya import OpenMayaUI
 from datetime import datetime, timedelta
 from math import floor
 import os
+import json
 
 
 WTITLE = 'Notes'
 WOBJ = 'notes'
+META_NODE = 'notesCache'
+META_TAG = 'notes-meta'
 
 notes = []  # Stores all notes currently loaded.
 
@@ -45,14 +48,44 @@ def save_notes():
     '''
     Saves all currently cached notes.
     '''
-    pass
+    notes_array = []
+
+    # Convert all the notes into a json string to cache
+    for note in notes:
+        notes_array.append(note.serialize())
+
+    # Create cache node if it does not exist in the scene already.
+    if not cmds.objExists(META_NODE):
+        cmds.createNode('unknown', name=META_NODE)
+        cmds.addAttr(META_NODE, ln='data', dt='string')
+
+    cmds.setAttr(f'{META_NODE}.data', json.dumps(notes_array), type='string')
 
 
 def load_notes():
     '''
     Loads notes for the currently open scene.
     '''
-    pass
+    notes.clear()
+    if not cmds.objExists(META_NODE):
+        return # Don't even bother
+
+    try:
+        # try and load the data from the cahce node.
+        data = json.loads(cmds.getAttr(f'{META_NODE}.data'))
+
+        # Create a new Note pbject for every cached note.
+        for noteData in data:
+            noteMeta = json.loads(noteData)
+            Note(
+                title=noteMeta['title'],
+                text=noteMeta['text'],
+                created_date=datetime.strptime(noteMeta['created_date'], '%Y-%m-%d %H:%M:%S.%f'), # 2022-05-01 04:56:54.090282
+                author=noteMeta['author'],
+                pinned=noteMeta['pinned']
+            )
+    except Exception:
+        pass
 
 
 def _maya_main_window():
@@ -159,6 +192,18 @@ class NoteCheck:
             self.children = []
         self.children.append(check)
 
+    def serialize(self) -> str:
+        json_data = {
+            'checked': self.checked,
+            'text': self.text
+        }
+        if self.children is not None or len(self.children) > 0:
+            children = []
+            for child in self.children:
+                children.append(child.serialize())
+            json_data['children'] = children
+        return json.dumps(json_data)
+
 
 @dataclass
 class Note:
@@ -172,11 +217,14 @@ class Note:
     checklist: list = None
     linked_objects: list = None
     pinned: bool = False
-    date: InitVar[datetime] = None
+    # date: InitVar[datetime] = None
 
-    def __post_init__(self, date):
-        if date is None:
+    def __post_init__(self):
+        if self.created_date is None:
             self.created_date = datetime.utcnow()
+
+        # Save this newly created note to the scene.
+        notes.append(self)
 
     def add_check(self, check: NoteCheck):
         if self.checklist is None:
@@ -188,6 +236,23 @@ class Note:
 
     def has_checklist(self):
         return self.checklist is not None and len(self.checklist) > 0
+
+    def serialize(self) -> str:
+        json_data = {
+            'title': self.title,
+            'text': self.text,
+            'created_date': str(self.created_date),
+            'author': self.author,
+            'pinned': self.pinned,
+            'checklist': [],
+            'linked_objects': []
+        }
+        if self.checklist is not None:
+            checks = []
+            for check in self.checklist:
+                checks.append(check.serialize())
+            json_data['checklist'] = checks
+        return json.dumps(json_data)
 
 
 class WrappedTextWidget(QPlainTextEdit):
@@ -394,7 +459,7 @@ class NoteChecklistWidget(QWidget):
         check.text.tabPressed.connect(lambda: print('tab was pressed'))
 
     def _tabbed(self, widget):
-        print ('Was tabbed')
+        print('Was tabbed')
 
     def pop(self, index: int):
         widget = self.items.pop(index)
@@ -511,24 +576,41 @@ class NoteWidget(QWidget):
         # Checklist connections
         self.checklist.emptied.connect(self.remove_checklist)
 
+        # Text update connections
+        self.title.textChanged.connect(self._update_title)
+        self.text.textChanged.connect(self._update_text)
+
+    def _update_title(self):
+        self.note.title = self.title.toPlainText()
+        save_notes()
+
+    def _update_text(self):
+        self.note.text = self.text.toPlainText()
+        save_notes()
+
     def pin(self):
         self.note.pinned = True
+        save_notes()
 
     def unpin(self):
         self.note.pinned = False
+        save_notes()
 
     def delete(self):
         notes.remove(self.note)
         self.setParent(None)
         self.deleteLater()
+        save_notes()
 
     def add_checklist(self):
         self.checklist.setVisible(True)
         self._listadd_btn.setVisible(False)
+        save_notes()
 
     def remove_checklist(self):
         self.checklist.setVisible(False)
         self._listadd_btn.setVisible(True)
+        save_notes()
 
     def resizeEvent(self, event):
         # Reposition the create notes button to be fixed to the windows bottom right.
@@ -548,6 +630,9 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
 
     def __init__(self, parent=_maya_main_window()):
         super(NotesUI, self).__init__(parent)
+
+        # make sure all the notes are loaded.
+        load_notes()
 
         # an array of all the notes currently loaded in the UI
         self._note_widgets = []
@@ -620,45 +705,23 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
     def create_new_note(self):
         note = Note()
         widget = NoteWidget(note)
-        notes.append(note)
         self._add_note(widget)
 
     def _add_note(self, widget: NoteWidget):
         self._note_widgets.append(widget)
         self._notes_layout.addWidget(widget)
 
-    def refresh_ui(self):
+    def _flush_ui(self):
         for note in self._note_widgets:
             note.setParent(None)
             note.deleteLater()
 
+    def refresh_ui(self):
+        self._flush_ui()
+
         for note in notes:
             self._add_note(NoteWidget(note))
 
-
-# test_note = Note('This is a title', 'Some text...',
-#                  author='Matthew', linked_objects='Testing')
-# test_note.add_check(NoteCheck('some test checkbox'))
-# test_note.add_check(NoteCheck('another checkbox', True))
-# notes.append(test_note)
-
-
-# test_note_c = Note('Simple test', 'Smol')
-# notes.append(test_note_c)
-# test_note_d = Note('Simple test')
-# notes.append(test_note_d)
-
-# test_note_b = Note('testing everything on a note that can be tested.',
-#                    'This is a longer description that should take up multiple lines when the window is not to wide.')
-# test_note_b.add_check(NoteCheck('Singleton checkbox', True))
-# test_note_b.add_check(NoteCheck(''))  # Empty checkbox'x should be ignred
-# test_note_b.add_check(
-#     NoteCheck('There was an empty checkbox above that was ignored.'))
-# test_note_b.add_check(NoteCheck('I have more...', children=[
-#                       NoteCheck('Like meeeeee', True), NoteCheck('And me!')]))
-# test_note_b.add_check(NoteCheck(
-#     'This is a longer task that should easily take up multiple lines to allow for checking of text wrapping.'))
-# notes.append(test_note_b)
 
 def run_main(**kwargs):
     _maya_delete_ui(WTITLE, WOBJ)
