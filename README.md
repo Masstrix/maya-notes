@@ -7,9 +7,9 @@
 This is a simple note taking script for maya. Running the script will open a intuiative UI to start taking notes in your scene.
 
 ## Installation
-- Download the latest release and put it in your maya scripts directory
+- Download the latest release and extract it's contents into
   - Mac: `user/library/preferences/maya/scripts`
   - Windows: `Users/user/Documents/maya/scripts`
-- Move `notes.mel` into the scripts directory.
+- There should be both `notes.mel` and a `Notes` folder in the scripts directory when extracted correctly.
 - You can the in maya run `notes` in the mel input to 
 open the interface.
