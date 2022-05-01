@@ -379,6 +379,7 @@ class NoteCheckWidget(QWidget):
         self.text = WrappedTextWidget(noteCheck.text)
         self.text.setPlaceholderText('Add another item..')
 
+        self.checkbox.stateChanged.connect(self._update_checked_status)
         self.text.textChanged.connect(self._update_text)
         self.text.setPreventTab(True)
 
@@ -492,6 +493,9 @@ class NoteChecklistWidget(QWidget):
 
 
 class NoteWidget(QWidget):
+    '''
+    A widget to represent a Note object.
+    '''
 
     def __init__(self, note: Note):
         super(NoteWidget, self).__init__()
@@ -679,8 +683,6 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
             widgetResizable=True, widget=self._notes_widget))
 
         # Create the floating button to create new notes.
-        # TODO add the add icon into it with correct alignment. Might need to make a subclass of
-        # TODO QPushButton with a custom draw function.
         self.create_btn = QToolButton(text='Create Note',
                                       objectName='create-note-btn',
                                       parent=self,
