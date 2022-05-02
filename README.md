@@ -1,9 +1,9 @@
 <div align="center">
     <h2>Maya Notes</h2>
-    <a href="/releases/latest">
+    <a href="https://github.com/Masstrix/maya-notes/releases/latest">
         <img src="https://img.shields.io/github/v/release/Masstrix/maya-notes?include_prereleases&style=for-the-badge">
     </a>
-    <a href="">
+    <a href="https://github.com/Masstrix/maya-notes/releases/latest/download/Notes.zip">
         <img src="https://img.shields.io/github/downloads/Masstrix/maya-notes/total?style=for-the-badge">
     </a>
 </div>
@@ -12,7 +12,7 @@
 This is a simple note taking script for maya. Running the script will open a intuiative UI to start taking notes in your scene.
 
 ## Installation
-- Download the latest release and extract it's contents into
+- [Download](https://github.com/Masstrix/maya-notes/releases/latest/download/Notes.zip) the latest release and extract it's contents into
   - Mac: `user/library/preferences/maya/scripts`
   - Windows: `Users/user/Documents/maya/scripts`
 - There should be both `notes.mel` and a `Notes` folder in the scripts directory when extracted correctly.
