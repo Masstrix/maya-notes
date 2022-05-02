@@ -1,6 +1,11 @@
 <div align="center">
     <h2>Maya Notes</h2>
-    <img src="https://img.shields.io/github/v/release/Masstrix/maya-notes?include_prereleases&style=for-the-badge">
+    <a href="/releases/latest">
+        <img src="https://img.shields.io/github/v/release/Masstrix/maya-notes?include_prereleases&style=for-the-badge">
+    </a>
+    <a href="">
+        <img src="https://img.shields.io/github/downloads/Masstrix/maya-notes/total?style=for-the-badge">
+    </a>
 </div>
 <br>
 
