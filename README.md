@@ -9,6 +9,11 @@
 </div>
 <br>
 
+<div align="center">
+    <img src="https://i.imgur.com/kHQ8g6W.png" height="250">
+</div>
+<br>
+
 This is a simple note taking script for maya. Running the script will open a intuiative UI to start taking notes in your scene.
 
 ## Installation
