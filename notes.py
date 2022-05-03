@@ -26,8 +26,8 @@ from PySide2 import QtCore, QtGui
 from PySide2.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog, QCheckBox, QLineEdit, QLabel, QPlainTextEdit, QSpacerItem, QSizePolicy, QToolButton, QScrollArea
 from shiboken2 import wrapInstance
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
-from maya import cmds
-from maya import OpenMayaUI
+from maya import cmds, OpenMayaUI
+from maya.OpenMaya import MSceneMessage
 from datetime import datetime, timedelta
 from math import floor
 import os
@@ -656,6 +656,7 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
 
         # an array of all the notes currently loaded in the UI
         self._note_widgets = []
+        self.callbacks = []
 
         # All pet rocks need to have a name.
         self.setObjectName(WOBJ)
@@ -676,6 +677,7 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
         self._construct_ui()
         self._connect_signals()
         self.refresh_ui()
+        self._create_callbacks()
 
     def _construct_ui(self):
         '''Construct all the elements needed to display the content.'''
@@ -718,6 +720,35 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
         self.create_btn.clicked.connect(self.create_new_note)
         self.search_input.textChanged.connect(self._update_search)
 
+    def _create_callbacks(self):
+        '''
+        Create any and all callbacks needed to keep the ui up to date
+        with the currently open scene.
+        '''
+        self.callbacks.append(MSceneMessage.addCallback(
+            MSceneMessage.kAfterNew,
+            self._reload_all
+        ))
+        self.callbacks.append(MSceneMessage.addCallback(
+            MSceneMessage.kAfterOpen,
+            self._reload_all
+        ))
+
+    def _reload_all(self, *args):
+        '''Reloads all notes'''
+        load_notes()
+        self.refresh_ui()
+
+    def hideEvent(self, event):
+        '''
+        Called when the window is closed. Maya just hides and dosn't actually call
+        closeEvent so hideEvent is used instead.
+        '''
+        super().hideEvent(event)
+        # Unregister all callbacks when window is closed.
+        for callback in self.callbacks:
+            MSceneMessage.removeCallback(callback)
+
 
     def resizeEvent(self, event):
         # Reposition the create notes button to be fixed to the windows bottom right.
@@ -732,9 +763,11 @@ class NotesUI(MayaQWidgetDockableMixin, QDialog):
         self._add_note(widget)
 
     def refresh_ui(self):
-        for note in self._note_widgets:
-            note.setParent(None)
-            note.deleteLater()
+        for widget in self._note_widgets:
+            if widget is None: continue
+            widget.setParent(None)
+            widget.deleteLater()
+        self._note_widgets.clear()
         for note in notes:
             self._add_note(NoteWidget(note))
 
