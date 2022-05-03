@@ -18,7 +18,7 @@ Author: Matthew Denton
 #################################################################
 """
 
-__version__ = (0, 1, 0)
+__version__ = (0, 1, 1)
 __author__ = 'Matthew Denton'
 
 from dataclasses import dataclass
