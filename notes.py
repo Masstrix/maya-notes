@@ -17,9 +17,17 @@ Author: Matthew Denton
 
 #################################################################
 """
+import os, json
+from os.path import join, dirname
 
-__version__ = (0, 1, 1)
-__author__ = 'Matthew Denton'
+# Load the current package data.
+package_json = None
+with open(join(dirname(__file__), 'package.json')) as file:
+    package_json = json.loads(file.read())
+
+if package_json:
+    __version__ = package_json['version']
+    __author__ = package_json['author']
 
 from dataclasses import dataclass
 from PySide2 import QtCore, QtGui
@@ -30,8 +38,6 @@ from maya import cmds, OpenMayaUI
 from maya.OpenMaya import MSceneMessage
 from datetime import datetime, timedelta
 from math import floor
-import os
-import json
 
 
 WTITLE = 'Notes'

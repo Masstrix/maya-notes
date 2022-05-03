@@ -1,0 +1,8 @@
+{
+    "version": "0.1.1",
+    "author": "Matthew Denton",
+
+    "dist": {
+        "name": "Notes"
+    }
+}
