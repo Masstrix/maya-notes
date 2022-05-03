@@ -1,0 +1,15 @@
+
+Github: https://github.com/Masstrix/maya-notes
+by Matthew Denton
+
+Installation
+
+1. Copy the contents into:
+    Mac:        user/library/preferences/maya/scripts
+    Windows:    Users/user/Documents/maya/scripts
+
+2. There should be both notes.mel and a Notes folder in the scripts directory when extracted correctly.
+
+3. Restart or open maya.
+
+4. Run the mel command notes to open the notes menu.
