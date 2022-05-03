@@ -1,0 +1,3 @@
+global proc notes() {
+    python("from Notes import notes; notes.run_main()");
+}
