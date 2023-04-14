@@ -23,3 +23,7 @@ This is a simple note taking script for maya. Running the script will open a int
 - There should be both `notes.mel` and a `Notes` folder in the scripts directory when extracted correctly.
 - You can the in maya run `notes` in the mel input to 
 open the interface.
+
+
+## Note
+I currently don't have a licence for Maya and so won't be maintaining this version of the script but intend to port it to other applications.
